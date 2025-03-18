@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicular Combat Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #instructions {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        #instructions h2 {
+            margin-top: 0;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">
+        <h2>Game Controls</h2>
+        <p>Use arrow keys to move:</p>
+        <ul>
+            <li>↑ Up</li>
+            <li>↓ Down</li>
+            <li>← Left</li>
+            <li>→ Right</li>
+        </ul>
+    </div>
+    <script type="module" src="/src/index.js"></script>
+</body>
+</html>
