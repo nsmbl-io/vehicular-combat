@@ -1,386 +1,235 @@
 import * as THREE from 'three';
-import { createVehicleModels, getVehicleStats } from './VehicleModels';
+import { Axel, Hammerhead, Outlaw, Spectre, Auger, ClubKid } from './vehicles';
 
-export class VehicleSelection {
-    constructor(scene, camera, renderer) {
-        console.log('Initializing VehicleSelection...');
+class VehicleSelection {
+    constructor(gameEngine) {
+        this.gameEngine = gameEngine;
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 2000);
         
-        this.scene = scene;
-        this.camera = camera;
-        this.renderer = renderer;
-        this.vehicles = createVehicleModels();
-        console.log('Created vehicles:', this.vehicles);
-        
-        this.selectedVehicle = null;
-        this.isSelecting = true;
-        this.backgroundGame = null;
-        this.currentModelRotation = 0;
-        
-        // Create model viewer scene
-        this.setupModelViewer();
-        console.log('Model viewer setup complete');
-        
-        // Create UI container
-        this.uiContainer = document.createElement('div');
-        this.uiContainer.className = 'vehicle-selection-ui';
-        document.body.appendChild(this.uiContainer);
-        console.log('UI container added to document');
-        
-        // Style the UI
-        this.setupStyles();
-        console.log('Styles applied');
-        
-        // Initialize vehicle selection UI
-        this.initializeVehicles();
-        console.log('Vehicles initialized');
-        
-        // Start model rotation animation
+        // Set up camera for menu view
+        this.camera.position.set(0, 5, 10);
+        this.camera.lookAt(0, 0, 0);
+
+        // Vehicle display
+        this.vehicles = [
+            { class: Axel, name: "Axel", description: "Big Segway - Balanced fighter with shockwave special" },
+            { class: Hammerhead, name: "Hammerhead", description: "Monster Truck - Heavy hitter with crushing stomp" },
+            { class: Outlaw, name: "Outlaw", description: "Police Car - All-around performer with taser shock" },
+            { class: Spectre, name: "Spectre", description: "Sports Car - Fast and agile with ghost missile" },
+            { class: Auger, name: "Auger", description: "Rock Driller - Tank-like with powerful drill charge" },
+            { class: ClubKid, name: "Club Kid", description: "Party Van - Speed demon with disco inferno" }
+        ];
+
+        this.currentVehicleIndex = 0;
+        this.vehicleInstance = null;
+        this.setupLighting();
+        this.createUI();
+        this.createVehicleDisplay();
+
+        // Background game view
+        this.backgroundRenderer = new THREE.WebGLRenderer({
+            canvas: document.createElement('canvas'),
+            alpha: true
+        });
+        this.backgroundRenderer.setSize(window.innerWidth, window.innerHeight);
+        this.backgroundRenderer.domElement.style.position = 'absolute';
+        this.backgroundRenderer.domElement.style.top = '0';
+        this.backgroundRenderer.domElement.style.left = '0';
+        this.backgroundRenderer.domElement.style.zIndex = '0';
+        document.body.appendChild(this.backgroundRenderer.domElement);
+
+        // Main menu renderer
+        this.renderer = new THREE.WebGLRenderer({
+            alpha: true
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.domElement.style.position = 'absolute';
+        this.renderer.domElement.style.top = '0';
+        this.renderer.domElement.style.left = '0';
+        this.renderer.domElement.style.zIndex = '1';
+        document.body.appendChild(this.renderer.domElement);
+
+        // Bind methods
+        this.animate = this.animate.bind(this);
+        this.handleResize = this.handleResize.bind(this);
+        this.handleKeyPress = this.handleKeyPress.bind(this);
+
+        // Add event listeners
+        window.addEventListener('resize', this.handleResize);
+        window.addEventListener('keydown', this.handleKeyPress);
+
+        // Start animation
         this.animate();
-        console.log('Animation started');
-
-        // Handle window resize
-        window.addEventListener('resize', () => this.onWindowResize());
-        
-        // Ensure the UI is visible
-        this.uiContainer.style.display = 'flex';
-        this.uiContainer.style.zIndex = '1000';
-        console.log('VehicleSelection initialization complete');
     }
 
-    setupModelViewer() {
-        // Create a separate scene for the model viewer
-        this.modelScene = new THREE.Scene();
-        this.modelCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
-        this.modelCamera.position.set(0, 2, 5);
-        this.modelCamera.lookAt(0, 0, 0);
+    setupLighting() {
+        // Ambient light
+        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(ambient);
 
-        // Add lighting to the model viewer
-        const light = new THREE.DirectionalLight(0xffffff, 1);
-        light.position.set(1, 1, 1);
-        this.modelScene.add(light);
-        this.modelScene.add(new THREE.AmbientLight(0x404040));
+        // Directional light
+        const light = new THREE.DirectionalLight(0xffffff, 0.8);
+        light.position.set(5, 5, 5);
+        this.scene.add(light);
 
-        // Create renderer for model viewer
-        this.modelRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        this.modelRenderer.setSize(300, 300);
-        this.modelRenderer.setClearColor(0x000000, 0);
+        // Spotlight for vehicle highlight
+        const spotlight = new THREE.SpotLight(0xffffff, 1);
+        spotlight.position.set(0, 10, 0);
+        spotlight.angle = Math.PI / 4;
+        spotlight.penumbra = 0.1;
+        spotlight.decay = 2;
+        spotlight.distance = 200;
+        this.scene.add(spotlight);
     }
 
-    onWindowResize() {
-        // Update model viewer size
-        const modelViewer = document.querySelector('.model-viewer');
-        if (modelViewer) {
-            const rect = modelViewer.getBoundingClientRect();
-            this.modelRenderer.setSize(rect.width, rect.height);
-            this.modelCamera.aspect = rect.width / rect.height;
-            this.modelCamera.updateProjectionMatrix();
-        }
-    }
-
-    setupStyles() {
-        const style = document.createElement('style');
-        style.textContent = `
-            .vehicle-selection-ui {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                background: rgba(0, 0, 0, 0.7);
-                z-index: 1000;
-            }
-            
-            .vehicle-selection-container {
-                display: flex;
-                gap: 40px;
-                align-items: center;
-                max-width: 1200px;
-                padding: 20px;
-                width: 100%;
-            }
-            
-            .model-viewer {
-                width: 300px;
-                height: 300px;
-                background: rgba(0, 0, 0, 0.3);
-                border-radius: 8px;
-                position: relative;
-                overflow: hidden;
-            }
-            
-            .model-viewer canvas {
-                border-radius: 8px;
-                width: 100% !important;
-                height: 100% !important;
-            }
-            
-            .vehicle-info {
-                flex: 1;
-                color: white;
-                padding: 20px;
-                background: rgba(0, 0, 0, 0.3);
-                border-radius: 8px;
-                min-width: 300px;
-            }
-            
-            .vehicle-stats {
-                display: grid;
-                grid-template-columns: auto 1fr;
-                gap: 10px;
-                margin-top: 20px;
-            }
-            
-            .stat-bar {
-                width: 200px;
-                height: 20px;
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 10px;
-                overflow: hidden;
-            }
-            
-            .stat-fill {
-                height: 100%;
-                background: #ff0000;
-                transition: width 0.3s ease;
-            }
-            
-            .vehicle-list {
-                display: flex;
-                gap: 10px;
-                margin-top: 20px;
-                overflow-x: auto;
-                padding: 10px;
-                max-width: 100%;
-                justify-content: center;
-            }
-            
-            .vehicle-thumbnail {
-                width: 80px;
-                height: 80px;
-                background: rgba(255, 255, 255, 0.1);
-                border: 2px solid transparent;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 0.8em;
-                color: white;
-                text-align: center;
-                padding: 5px;
-                flex-shrink: 0;
-            }
-            
-            .vehicle-thumbnail:hover {
-                border-color: #ff4444;
-                transform: scale(1.05);
-            }
-            
-            .vehicle-thumbnail.selected {
-                border-color: #ff0000;
-                background: rgba(255, 0, 0, 0.2);
-            }
-            
-            .start-button {
-                margin-top: 20px;
-                padding: 15px 40px;
-                font-size: 1.2em;
-                background: #ff0000;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-                transition: background 0.3s ease;
-            }
-            
-            .start-button:hover {
-                background: #cc0000;
-            }
-            
-            .start-button:disabled {
-                background: #666;
-                cursor: not-allowed;
-            }
-            
-            .special-attack {
-                margin-top: 20px;
-                padding: 10px;
-                background: rgba(255, 0, 0, 0.2);
-                border-radius: 5px;
-            }
-
-            @media (max-width: 768px) {
-                .vehicle-selection-container {
-                    flex-direction: column;
-                    align-items: center;
-                }
-
-                .model-viewer {
-                    width: 250px;
-                    height: 250px;
-                }
-
-                .vehicle-info {
-                    width: 100%;
-                    max-width: 400px;
-                }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-
-    initializeVehicles() {
+    createUI() {
+        // Create UI container
         const container = document.createElement('div');
-        container.className = 'vehicle-selection-container';
+        container.style.position = 'absolute';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        container.style.zIndex = '2';
+        container.style.pointerEvents = 'none';
+        document.body.appendChild(container);
 
-        // Create model viewer
-        const modelViewer = document.createElement('div');
-        modelViewer.className = 'model-viewer';
-        modelViewer.appendChild(this.modelRenderer.domElement);
+        // Stats panel
+        this.statsPanel = document.createElement('div');
+        this.statsPanel.style.position = 'absolute';
+        this.statsPanel.style.right = '20px';
+        this.statsPanel.style.top = '20px';
+        this.statsPanel.style.padding = '20px';
+        this.statsPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        this.statsPanel.style.color = 'white';
+        this.statsPanel.style.fontFamily = 'Arial, sans-serif';
+        this.statsPanel.style.borderRadius = '10px';
+        container.appendChild(this.statsPanel);
 
-        // Create vehicle info panel
-        const vehicleInfo = document.createElement('div');
-        vehicleInfo.className = 'vehicle-info';
+        // Controls info
+        const controls = document.createElement('div');
+        controls.style.position = 'absolute';
+        controls.style.bottom = '20px';
+        controls.style.left = '50%';
+        controls.style.transform = 'translateX(-50%)';
+        controls.style.padding = '10px 20px';
+        controls.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        controls.style.color = 'white';
+        controls.style.fontFamily = 'Arial, sans-serif';
+        controls.style.borderRadius = '5px';
+        controls.innerHTML = '← → to select vehicle | ENTER to join battle';
+        container.appendChild(controls);
 
-        // Create vehicle list
-        const vehicleList = document.createElement('div');
-        vehicleList.className = 'vehicle-list';
-
-        this.vehicles.forEach(vehicle => {
-            const thumbnail = document.createElement('div');
-            thumbnail.className = 'vehicle-thumbnail';
-            thumbnail.textContent = vehicle.name;
-            thumbnail.addEventListener('click', () => this.selectVehicle(vehicle));
-            vehicleList.appendChild(thumbnail);
-        });
-
-        container.appendChild(modelViewer);
-        container.appendChild(vehicleInfo);
-        this.uiContainer.appendChild(container);
-        this.uiContainer.appendChild(vehicleList);
-
-        // Add start button
-        const startButton = document.createElement('button');
-        startButton.className = 'start-button';
-        startButton.textContent = 'Start Game';
-        startButton.disabled = true;
-        startButton.addEventListener('click', () => this.startGame());
-        this.uiContainer.appendChild(startButton);
-        this.startButton = startButton;
-
-        // Select first vehicle by default
-        if (this.vehicles.length > 0) {
-            this.selectVehicle(this.vehicles[0]);
-        }
-
-        // Initial resize
-        this.onWindowResize();
+        this.updateStatsPanel();
     }
 
-    selectVehicle(vehicle) {
-        this.selectedVehicle = vehicle;
-        this.startButton.disabled = false;
+    updateStatsPanel() {
+        const vehicle = this.vehicles[this.currentVehicleIndex];
+        const instance = new vehicle.class({});
         
-        // Update UI to show selection
-        document.querySelectorAll('.vehicle-thumbnail').forEach(thumb => {
-            thumb.classList.remove('selected');
-            if (thumb.textContent === vehicle.name) {
-                thumb.classList.add('selected');
-            }
-        });
+        this.statsPanel.innerHTML = `
+            <h2 style="margin: 0 0 10px 0">${vehicle.name}</h2>
+            <p style="margin: 0 0 15px 0">${vehicle.description}</p>
+            <div style="margin-bottom: 5px">Speed: ${'★'.repeat(instance.speed)}${'☆'.repeat(5-instance.speed)}</div>
+            <div style="margin-bottom: 5px">Acceleration: ${'★'.repeat(instance.acceleration)}${'☆'.repeat(5-instance.acceleration)}</div>
+            <div style="margin-bottom: 5px">Handling: ${'★'.repeat(instance.handling)}${'☆'.repeat(5-instance.handling)}</div>
+            <div style="margin-bottom: 5px">Armor: ${'★'.repeat(instance.armor)}${'☆'.repeat(5-instance.armor)}</div>
+            <div style="margin-bottom: 5px">Weight: ${'★'.repeat(instance.weight)}${'☆'.repeat(5-instance.weight)}</div>
+            <div style="margin-top: 15px">
+                <div>Standard Weapon: ${instance.standardWeapon}</div>
+                <div>Special Weapon: ${instance.specialWeapon}</div>
+            </div>
+        `;
+    }
 
-        // Update model viewer
-        this.modelScene.clear();
-        this.modelScene.add(new THREE.AmbientLight(0x404040));
-        const light = new THREE.DirectionalLight(0xffffff, 1);
-        light.position.set(1, 1, 1);
-        this.modelScene.add(light);
-
-        try {
-            if (vehicle.geometry instanceof THREE.Group) {
-                this.modelScene.add(vehicle.geometry);
-            } else if (vehicle.mesh) {
-                this.modelScene.add(vehicle.mesh);
-            } else {
-                console.error('Invalid vehicle model:', vehicle);
-                return;
-            }
-        } catch (error) {
-            console.error('Error adding vehicle to scene:', error);
+    createVehicleDisplay() {
+        if (this.vehicleInstance) {
+            this.scene.remove(this.vehicleInstance.mesh);
         }
 
-        // Update vehicle info
-        const vehicleInfo = document.querySelector('.vehicle-info');
-        const stats = getVehicleStats(vehicle.name);
-        if (stats) {
-            vehicleInfo.innerHTML = `
-                <h2>${vehicle.name}</h2>
-                <div class="vehicle-stats">
-                    <div>Speed:</div>
-                    <div class="stat-bar">
-                        <div class="stat-fill" style="width: ${(stats.speed / 10) * 100}%"></div>
-                    </div>
-                    <div>Armor:</div>
-                    <div class="stat-bar">
-                        <div class="stat-fill" style="width: ${(stats.armor / 10) * 100}%"></div>
-                    </div>
-                    <div>Handling:</div>
-                    <div class="stat-bar">
-                        <div class="stat-fill" style="width: ${(stats.handling / 10) * 100}%"></div>
-                    </div>
-                </div>
-                <div class="special-attack">
-                    <strong>Special Attack:</strong><br>
-                    ${stats.special}
-                </div>
-            `;
-        } else {
-            console.error('No stats found for vehicle:', vehicle.name);
+        const VehicleClass = this.vehicles[this.currentVehicleIndex].class;
+        this.vehicleInstance = new VehicleClass({});
+        
+        // Add to scene and set up rotation animation
+        this.scene.add(this.vehicleInstance.mesh);
+        this.vehicleInstance.mesh.rotation.y = 0;
+    }
+
+    handleKeyPress(event) {
+        switch(event.key) {
+            case 'ArrowLeft':
+                this.currentVehicleIndex = (this.currentVehicleIndex - 1 + this.vehicles.length) % this.vehicles.length;
+                this.createVehicleDisplay();
+                this.updateStatsPanel();
+                break;
+            case 'ArrowRight':
+                this.currentVehicleIndex = (this.currentVehicleIndex + 1) % this.vehicles.length;
+                this.createVehicleDisplay();
+                this.updateStatsPanel();
+                break;
+            case 'Enter':
+                this.joinGame();
+                break;
         }
     }
 
-    startGame() {
-        if (!this.selectedVehicle) return;
+    joinGame() {
+        // Clean up
+        window.removeEventListener('resize', this.handleResize);
+        window.removeEventListener('keydown', this.handleKeyPress);
+        document.body.removeChild(this.renderer.domElement);
+        document.body.removeChild(this.backgroundRenderer.domElement);
+
+        // Create selected vehicle and add to game
+        const VehicleClass = this.vehicles[this.currentVehicleIndex].class;
+        const playerVehicle = new VehicleClass({});
         
-        // Remove UI
-        this.uiContainer.remove();
-        this.isSelecting = false;
-        
-        // Emit event to start game with selected vehicle
-        const event = new CustomEvent('vehicleSelected', {
-            detail: { vehicle: this.selectedVehicle }
-        });
-        document.dispatchEvent(event);
+        // Add vehicle to game and start playing
+        this.gameEngine.addPlayerVehicle(playerVehicle);
+        this.gameEngine.start();
+
+        // Stop the selection screen animation
+        cancelAnimationFrame(this.animationFrame);
     }
 
-    update() {
-        if (this.isSelecting && this.selectedVehicle) {
-            // Rotate the selected vehicle model
-            this.currentModelRotation += 0.01;
-            try {
-                if (this.selectedVehicle.geometry instanceof THREE.Group) {
-                    this.selectedVehicle.geometry.rotation.y = this.currentModelRotation;
-                } else if (this.selectedVehicle.mesh) {
-                    this.selectedVehicle.mesh.rotation.y = this.currentModelRotation;
-                }
-            } catch (error) {
-                console.error('Error rotating vehicle model:', error);
-            }
-            
-            // Render the model viewer
-            this.modelRenderer.render(this.modelScene, this.modelCamera);
-        }
+    handleResize() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+
+        this.renderer.setSize(width, height);
+        this.backgroundRenderer.setSize(width, height);
     }
 
     animate() {
-        if (this.isSelecting) {
-            requestAnimationFrame(() => this.animate());
-            this.update();
+        this.animationFrame = requestAnimationFrame(this.animate);
+
+        // Rotate vehicle display
+        if (this.vehicleInstance && this.vehicleInstance.mesh) {
+            this.vehicleInstance.mesh.rotation.y += 0.01;
         }
+
+        // Render background game
+        this.backgroundRenderer.render(this.gameEngine.scene, this.gameEngine.camera);
+
+        // Render menu scene
+        this.renderer.render(this.scene, this.camera);
     }
-} 
+
+    dispose() {
+        window.removeEventListener('resize', this.handleResize);
+        window.removeEventListener('keydown', this.handleKeyPress);
+        
+        if (this.vehicleInstance) {
+            this.vehicleInstance.dispose();
+        }
+        
+        this.renderer.dispose();
+        this.backgroundRenderer.dispose();
+    }
+}
+
+export default VehicleSelection; 
